@@ -15,6 +15,7 @@ def dispatch(tokens: list[str]) -> bool:
         "commits": cmd.cmd_commits,
         "checkout": cmd.cmd_checkout,
         "reset": cmd.cmd_reset,
+        "clear": cmd.cmd_clear,
     }
 
     handler = table.get(name)

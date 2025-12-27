@@ -5,6 +5,7 @@ def cmd_help(args=None) -> None:
         "LazyGit (REPL) commands:\n"
         "  help                    Show this help\n"
         "  exit | quit             Exit LazyGit\n"
+        "  clear                   Clear the screen\n"
         "  branches                List local branches\n"
         "  commits [N]             List latest N commits (default: 10)\n"
         "  checkout <branch>       git checkout <branch>\n"
@@ -15,6 +16,13 @@ def cmd_help(args=None) -> None:
         "  - Unknown command prints a hint to use 'help'.\n"
         "  - If not in a git repository, git-related commands will print: Not a git repository.\n"
     )
+def cmd_clear(args: list[str]) -> None:
+    try:
+        # ANSI: 清螢幕(2J) + 游標移到左上(H)
+        print("\033[2J\033[H", end="")
+    except Exception:
+        import os
+        os.system("cls" if os.name == "nt" else "clear")
 
 def cmd_branches(args: list[str]) -> None:
     if not ga.is_git_repo():
