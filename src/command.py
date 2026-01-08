@@ -1,4 +1,17 @@
 import git_adapter as ga
+import ui_picker as ui
+
+def pick_branch() -> str | None:
+    branches = ga.list_branches()
+    choices = [ui.Choice(value=b, label=b, meta="") for b in branches]
+    return ui.pick_value(choices, "checkout", min_chars=0, empty_limit=50)
+
+
+def pick_commit(limit: int = 200) -> str | None:
+    commits = ga.list_commits(limit)
+    choices = [ui.Choice(value=sha, label=sha, meta=subject) for sha, subject in commits]
+    return ui.pick_value(choices, "reset", min_chars=0, empty_limit=50)
+
 
 def cmd_help(args=None) -> None:
     print(
@@ -8,21 +21,23 @@ def cmd_help(args=None) -> None:
         "  clear                   Clear the screen\n"
         "  branches                List local branches\n"
         "  commits [N]             List latest N commits (default: 10)\n"
-        "  checkout <branch>       git checkout <branch>\n"
-        "  reset <sha>             git reset <sha>\n"
+        "  checkout [branch]       git checkout <branch> (no arg opens picker)\n"
+        "  reset [sha]             git reset <sha> (no arg opens picker)\n"
         "\n"
         "Notes:\n"
         "  - Empty input is ignored.\n"
         "  - Unknown command prints a hint to use 'help'.\n"
         "  - If not in a git repository, git-related commands will print: Not a git repository.\n"
     )
+
+
 def cmd_clear(args: list[str]) -> None:
     try:
-        # ANSI: 清螢幕(2J) + 游標移到左上(H)
         print("\033[2J\033[H", end="")
     except Exception:
         import os
         os.system("cls" if os.name == "nt" else "clear")
+
 
 def cmd_branches(args: list[str]) -> None:
     if not ga.is_git_repo():
@@ -30,6 +45,7 @@ def cmd_branches(args: list[str]) -> None:
         return
     for name in ga.list_branches():
         print(name)
+
 
 def cmd_commits(args: list[str]) -> None:
     if not ga.is_git_repo():
@@ -49,29 +65,45 @@ def cmd_commits(args: list[str]) -> None:
     for sha, subject in ga.list_commits(n):
         print(f"{sha} {subject}")
 
+
 def cmd_checkout(args: list[str]) -> None:
     if not ga.is_git_repo():
         print("Not a git repository.")
         return
-    if len(args) != 1 or not args[0].strip():
-        print("usage: checkout <branch>")
+
+    if len(args) == 0:
+        target = pick_branch()
+        if target is None:
+            return
+    elif len(args) == 1 and args[0].strip():
+        target = args[0].strip()
+    else:
+        print("usage: checkout [branch]")
         return
 
-    code, out, err = ga.checkout(args[0])
+    code, out, err = ga.checkout(target)
     if code != 0:
         print(err)
     elif out.strip():
         print(out)
 
+
 def cmd_reset(args: list[str]) -> None:
     if not ga.is_git_repo():
         print("Not a git repository.")
         return
-    if len(args) != 1 or not args[0].strip():
-        print("usage: reset <sha>")
+
+    if len(args) == 0:
+        target = pick_commit()
+        if target is None:
+            return
+    elif len(args) == 1 and args[0].strip():
+        target = args[0].strip()
+    else:
+        print("usage: reset [sha]")
         return
 
-    code, out, err = ga.reset(args[0])
+    code, out, err = ga.reset(target)
     if code != 0:
         print(err)
     elif out.strip():

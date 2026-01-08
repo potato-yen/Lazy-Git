@@ -3,3 +3,4 @@ __pycache__/
 LazyGit_SPEC.md
 .DS_Store
 .vscode
+lazygit.egg-info/
