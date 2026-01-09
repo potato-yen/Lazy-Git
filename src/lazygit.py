@@ -12,7 +12,6 @@ import time
 
 _COMMAND_META = {
     "help": "Show help",
-    "exit": "Exit LazyGit",
     "quit": "Exit LazyGit",
     "clear": "Clear the screen",
     "branches": "List local branches",
@@ -21,6 +20,32 @@ _COMMAND_META = {
     "reset": "git reset [sha] (picker if no arg)",
 }
 
+
+def _truncate(s: str, n: int) -> str:
+    if n <= 0:
+        return ""
+    if s is None:
+        return ""
+    s = str(s)
+    return s if len(s) <= n else s[: max(0, n - 1)] + "…"
+
+
+def _fuzzy_in_order(needle: str, haystack: str) -> bool:
+    needle = (needle or "").lower()
+    haystack = (haystack or "").lower()
+    if needle == "":
+        return True
+
+    it = iter(haystack)
+    for ch in needle:
+        for h in it:
+            if h == ch:
+                break
+        else:
+            return False
+    return True
+
+
 class Cache:
     def __init__(self, branches_cache=None, commits_cache=None, branches_at=0.0, commits_at=0.0):
         self.branches_cache = branches_cache if branches_cache is not None else []
@@ -28,24 +53,21 @@ class Cache:
         self.branches_cache_at = float(branches_at)
         self.commits_cache_at = float(commits_at)
 
-    def get_cached_branches(self, ttl_sec = st.CACHE_TTL_SEC) -> list[str]:
+    def get_cached_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.branches_cache_at
-
         if self.branches_cache_at == 0.0 or past_time > ttl_sec:
             self.branches_cache = ga.list_branches()
             self.branches_cache_at = time.time()
-
         return self.branches_cache
 
     def get_cached_commits(self, limit=st.COMMITS_LIMIT, ttl_sec=st.CACHE_TTL_SEC) -> list[tuple[str, str]]:
         past_time = time.time() - self.commits_cache_at
-
         if self.commits_cache_at == 0.0 or past_time > ttl_sec:
             self.commits_cache = ga.list_commits(limit)
             self.commits_cache_at = time.time()
-
         return self.commits_cache
-    
+
+
 class LazyGitCompleter(Completer):
     def __init__(self, cache):
         self.cache = cache
@@ -75,27 +97,47 @@ class LazyGitCompleter(Completer):
             if not ga.is_git_repo():
                 return
             branches = self.cache.get_cached_branches()
-            prefix = document.get_word_before_cursor(WORD=True)
+            query = document.get_word_before_cursor(WORD=True)
+
+            if query == "":
+                for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
+                    yield Completion(text=b, start_position=0, display=b, display_meta="branch")
+                return
+
+            q = query.lower()
             for b in branches:
-                if prefix == "" or b.startswith(prefix):
-                    yield Completion(text=b, start_position=-len(prefix), display=b, display_meta="branch")
+                if _fuzzy_in_order(q, b):
+                    yield Completion(text=b, start_position=-len(query), display=b, display_meta="branch")
             return
 
         # reset
         if first == "reset":
             if not ga.is_git_repo():
                 return
-            prefix = document.get_word_before_cursor(WORD=True)
+
+            query = document.get_word_before_cursor(WORD=True)
             commits = self.cache.get_cached_commits(st.COMMITS_LIMIT)
 
-            if prefix == "":
-                for sha, subject in commits[:st.COMMITS_EMPTY_LIMIT_REPL]:
-                    yield Completion(text=sha, start_position=0, display=sha, display_meta=subject)
+            if query == "":
+                for sha, subject in commits[: st.COMMITS_EMPTY_LIMIT_REPL]:
+                    yield Completion(
+                        text=sha,
+                        start_position=0,
+                        display=sha,
+                        display_meta=_truncate(subject, st.COMMIT_SUBJECT_MAX),
+                    )
                 return
 
+            q = query.lower()
             for sha, subject in commits:
-                if sha.startswith(prefix):
-                    yield Completion(text=sha, start_position=-len(prefix), display=sha, display_meta=subject)
+                hay = f"{sha} {subject}"
+                if _fuzzy_in_order(q, hay):
+                    yield Completion(
+                        text=sha,
+                        start_position=-len(query),
+                        display=sha,
+                        display_meta=_truncate(subject, st.COMMIT_SUBJECT_MAX),
+                    )
             return
 
 
@@ -105,7 +147,7 @@ def dispatch(tokens: list[str]) -> bool:
 
     name, args = tokens[0], tokens[1:]
 
-    if name in ("quit", "exit"):
+    if name == "quit":
         return False
 
     table = {

@@ -3,23 +3,47 @@ import ui_picker as ui
 import setting as st
 
 
+def _truncate(s: str, n: int) -> str:
+    if n <= 0:
+        return ""
+    if s is None:
+        return ""
+    s = str(s)
+    return s if len(s) <= n else s[: max(0, n - 1)] + "…"
+
+
 def pick_branch() -> str | None:
     branches = ga.list_branches()
     choices = [(b, b, "") for b in branches]
-    return ui.pick_value(choices, "checkout", min_chars=0, empty_limit=st.BRANCHES_EMPTY_LIMIT)
+    return ui.pick_value(
+        choices,
+        "checkout",
+        min_chars=0,
+        empty_limit=st.BRANCHES_EMPTY_LIMIT,
+        fuzzy=True,
+        meta_max=0,
+    )
 
 
 def pick_commit(limit: int = st.COMMITS_LIMIT) -> str | None:
     commits = ga.list_commits(limit)
-    choices = [(sha, sha, subject) for sha, subject in commits]
-    return ui.pick_value(choices, "reset", min_chars=0, empty_limit=st.COMMITS_EMPTY_LIMIT_PICKER)
+    choices = [(sha, sha, _truncate(subject, st.COMMIT_SUBJECT_MAX)) for sha, subject in commits]
+
+    return ui.pick_value(
+        choices,
+        "reset",
+        min_chars=0,
+        empty_limit=st.COMMITS_EMPTY_LIMIT_PICKER,
+        fuzzy=True,
+        meta_max=st.COMMIT_SUBJECT_MAX,
+    )
 
 
 def cmd_help(args=None) -> None:
     print(
         "LazyGit (REPL) commands:\n"
         "  help                    Show this help\n"
-        "  exit | quit             Exit LazyGit\n"
+        "  quit                    Exit LazyGit\n"
         "  clear                   Clear the screen\n"
         "  branches                List local branches\n"
         "  commits [N]             List latest N commits (default: 10)\n"
