@@ -4,3 +4,4 @@ LazyGit_SPEC.md
 .DS_Store
 .vscode
 lazygit.egg-info/
+build/

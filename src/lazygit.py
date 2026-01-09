@@ -190,7 +190,3 @@ def repl_loop() -> int:
         tokens = parse_line(line)
         if dispatch(tokens) is False:
             return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(repl_loop())
