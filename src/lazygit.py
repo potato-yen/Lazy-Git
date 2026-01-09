@@ -1,10 +1,13 @@
 import command as cmd
 import git_adapter as ga
+import setting as st
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.shortcuts import CompleteStyle
+
+import time
 
 
 _COMMAND_META = {
@@ -18,8 +21,35 @@ _COMMAND_META = {
     "reset": "git reset [sha] (picker if no arg)",
 }
 
+class Cache:
+    def __init__(self, branches_cache=None, commits_cache=None, branches_at=0.0, commits_at=0.0):
+        self.branches_cache = branches_cache if branches_cache is not None else []
+        self.commits_cache = commits_cache if commits_cache is not None else []
+        self.branches_cache_at = float(branches_at)
+        self.commits_cache_at = float(commits_at)
 
+    def get_cached_branches(self, ttl_sec = st.CACHE_TTL_SEC) -> list[str]:
+        past_time = time.time() - self.branches_cache_at
+
+        if self.branches_cache_at == 0.0 or past_time > ttl_sec:
+            self.branches_cache = ga.list_branches()
+            self.branches_cache_at = time.time()
+
+        return self.branches_cache
+
+    def get_cached_commits(self, limit=st.COMMITS_LIMIT, ttl_sec=st.CACHE_TTL_SEC) -> list[tuple[str, str]]:
+        past_time = time.time() - self.commits_cache_at
+
+        if self.commits_cache_at == 0.0 or past_time > ttl_sec:
+            self.commits_cache = ga.list_commits(limit)
+            self.commits_cache_at = time.time()
+
+        return self.commits_cache
+    
 class LazyGitCompleter(Completer):
+    def __init__(self, cache):
+        self.cache = cache
+
     def get_completions(self, document: Document, complete_event):
         text = document.text_before_cursor
         stripped = text.lstrip()
@@ -44,8 +74,9 @@ class LazyGitCompleter(Completer):
         if first == "checkout":
             if not ga.is_git_repo():
                 return
+            branches = self.cache.get_cached_branches()
             prefix = document.get_word_before_cursor(WORD=True)
-            for b in ga.list_branches():
+            for b in branches:
                 if prefix == "" or b.startswith(prefix):
                     yield Completion(text=b, start_position=-len(prefix), display=b, display_meta="branch")
             return
@@ -55,11 +86,10 @@ class LazyGitCompleter(Completer):
             if not ga.is_git_repo():
                 return
             prefix = document.get_word_before_cursor(WORD=True)
-
-            commits = ga.list_commits(200)
+            commits = self.cache.get_cached_commits(st.COMMITS_LIMIT)
 
             if prefix == "":
-                for sha, subject in commits[:15]:
+                for sha, subject in commits[:st.COMMITS_EMPTY_LIMIT_REPL]:
                     yield Completion(text=sha, start_position=0, display=sha, display_meta=subject)
                 return
 
@@ -101,8 +131,10 @@ def parse_line(line: str) -> list[str]:
 
 
 def repl_loop() -> int:
+    cache = Cache()
+    completer = LazyGitCompleter(cache)
     session = PromptSession(
-        completer=LazyGitCompleter(),
+        completer=completer,
         complete_while_typing=True,
         complete_style=CompleteStyle.COLUMN,
     )

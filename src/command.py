@@ -1,16 +1,18 @@
 import git_adapter as ga
 import ui_picker as ui
+import setting as st
+
 
 def pick_branch() -> str | None:
     branches = ga.list_branches()
-    choices = [ui.Choice(value=b, label=b, meta="") for b in branches]
-    return ui.pick_value(choices, "checkout", min_chars=0, empty_limit=50)
+    choices = [(b, b, "") for b in branches]
+    return ui.pick_value(choices, "checkout", min_chars=0, empty_limit=st.BRANCHES_EMPTY_LIMIT)
 
 
-def pick_commit(limit: int = 200) -> str | None:
+def pick_commit(limit: int = st.COMMITS_LIMIT) -> str | None:
     commits = ga.list_commits(limit)
-    choices = [ui.Choice(value=sha, label=sha, meta=subject) for sha, subject in commits]
-    return ui.pick_value(choices, "reset", min_chars=0, empty_limit=50)
+    choices = [(sha, sha, subject) for sha, subject in commits]
+    return ui.pick_value(choices, "reset", min_chars=0, empty_limit=st.COMMITS_EMPTY_LIMIT_PICKER)
 
 
 def cmd_help(args=None) -> None:
@@ -43,6 +45,7 @@ def cmd_branches(args: list[str]) -> None:
     if not ga.is_git_repo():
         print("Not a git repository.")
         return
+
     for name in ga.list_branches():
         print(name)
 
@@ -52,7 +55,7 @@ def cmd_commits(args: list[str]) -> None:
         print("Not a git repository.")
         return
 
-    n = 10
+    n = st.COMMITS_PRINT_DEFAULT
     if len(args) >= 1:
         try:
             n = int(args[0])

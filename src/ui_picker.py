@@ -1,3 +1,5 @@
+import setting as st
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
@@ -6,7 +8,7 @@ from prompt_toolkit.shortcuts import CompleteStyle
 
 
 class SimpleCompleter(Completer):
-    def __init__(self, choices, min_chars=0, empty_limit=50):
+    def __init__(self, choices, min_chars=0, empty_limit=st.BRANCHES_EMPTY_LIMIT):
         self.choices = list(choices)
         self.min_chars = int(min_chars)
         self.empty_limit = int(empty_limit)
