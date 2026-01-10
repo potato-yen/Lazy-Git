@@ -49,6 +49,8 @@ def cmd_help(args=None) -> None:
         "  commits [N]             List latest N commits (default: 10)\n"
         "  checkout [branch]       git checkout <branch> (no arg opens picker)\n"
         "  reset [sha]             git reset <sha> (no arg opens picker)\n"
+        "  status                  git status -sb\n"
+        "  fetch                   git fetch --all --prune\n"
         "\n"
         "Notes:\n"
         "  - Empty input is ignored.\n"
@@ -135,3 +137,27 @@ def cmd_reset(args: list[str]) -> None:
         print(err)
     elif out.strip():
         print(out)
+
+
+def cmd_status(args: list[str]) ->None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+    
+    code, out, err = ga.status()
+    if code != 0:
+        print(err)
+    elif out.strip():
+        print(out)
+
+
+def cmd_fetch(args: list[str]) -> None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+    
+    code, err = ga.fetch()
+    if code != 0:
+        print(err)
+    else:
+        print("Complete.")

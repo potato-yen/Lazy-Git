@@ -11,7 +11,7 @@ def list_branches():
     if not is_git_repo():
         return []
 
-    output = command_run(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads"])
+    output = command_run(["git", "for-each-ref", "--format=%(refname:short)", "refs/heads" , "refs/remotes"])
     if output.returncode != 0:
         return []
 
@@ -52,3 +52,16 @@ def reset(sha : str):
         return (1, "", "Not a git repository.")
     output = command_run(["git", "reset", sha])
     return output.returncode, output.stdout, output.stderr
+
+def status():
+    if not is_git_repo():
+        return (1, "", "Not a git repository.")
+    output = command_run(["git", "status", "-sb"])
+    return output.returncode, output.stdout, output.stderr
+
+def fetch():
+    if not is_git_repo():
+        return (1, "", "Not a git repository.")
+    output = command_run(["git", "fetch", "--all", "--prune"])
+    return output.returncode,output.stderr
+

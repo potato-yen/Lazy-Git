@@ -18,6 +18,8 @@ _COMMAND_META = {
     "commits": "List commits (commits [N])",
     "checkout": "git checkout [branch] (picker if no arg)",
     "reset": "git reset [sha] (picker if no arg)",
+    "status": "git status -sb",
+    "fetch": "git fetch --all --prune"
 }
 
 
@@ -157,6 +159,8 @@ def dispatch(tokens: list[str]) -> bool:
         "checkout": cmd.cmd_checkout,
         "reset": cmd.cmd_reset,
         "clear": cmd.cmd_clear,
+        "status": cmd.cmd_status,
+        "fetch": cmd.cmd_fetch,
     }
 
     handler = table.get(name)
@@ -190,3 +194,7 @@ def repl_loop() -> int:
         tokens = parse_line(line)
         if dispatch(tokens) is False:
             return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(repl_loop())
