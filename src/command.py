@@ -3,54 +3,21 @@ import ui_picker as ui
 import setting as st
 
 
-def _truncate(s: str, n: int) -> str:
-    if n <= 0:
-        return ""
-    if s is None:
-        return ""
-    s = str(s)
-    return s if len(s) <= n else s[: max(0, n - 1)] + "…"
-
-
-def pick_branch() -> str | None:
-    branches = ga.list_branches()
-    choices = [(b, b, "") for b in branches]
-    return ui.pick_value(
-        choices,
-        "checkout",
-        min_chars=0,
-        empty_limit=st.BRANCHES_EMPTY_LIMIT,
-        fuzzy=True,
-        meta_max=0,
-    )
-
-
-def pick_commit(limit: int = st.COMMITS_LIMIT) -> str | None:
-    commits = ga.list_commits(limit)
-    choices = [(sha, sha, _truncate(subject, st.COMMIT_SUBJECT_MAX)) for sha, subject in commits]
-
-    return ui.pick_value(
-        choices,
-        "reset",
-        min_chars=0,
-        empty_limit=st.COMMITS_EMPTY_LIMIT_PICKER,
-        fuzzy=True,
-        meta_max=st.COMMIT_SUBJECT_MAX,
-    )
-
-
 def cmd_help(args=None) -> None:
     print(
         "LazyGit (REPL) commands:\n"
-        "  help                    Show this help\n"
-        "  quit                    Exit LazyGit\n"
-        "  clear                   Clear the screen\n"
-        "  branches                List local branches\n"
-        "  commits [N]             List latest N commits (default: 10)\n"
-        "  checkout [branch]       git checkout <branch> (no arg opens picker)\n"
-        "  reset [sha]             git reset <sha> (no arg opens picker)\n"
-        "  status                  git status -sb\n"
-        "  fetch                   git fetch --all --prune\n"
+        "  help                         Show this help\n"
+        "  quit                         Exit LazyGit\n"
+        "  clear                        Clear the screen\n"
+        "  remotes                      List remote names\n"
+        "  branches                     List local branches\n"
+        "  commits [N]                  List latest N commits (default: 10)\n"
+        "  fetch                        git fetch --all --prune\n"
+        "  status                       git status -sb\n"
+        "  checkout [branch]            git checkout <branch> (no arg opens picker)\n"
+        "  reset [sha]                  git reset <sha> (no arg opens picker)\n"
+        "  push [remote] [branch]       git push <remote name> <branch>\n"
+        "  pull [remote] [branch]       git pull <remote name> <branch>\n"
         "\n"
         "Notes:\n"
         "  - Empty input is ignored.\n"
@@ -67,13 +34,29 @@ def cmd_clear(args: list[str]) -> None:
         os.system("cls" if os.name == "nt" else "clear")
 
 
+def cmd_remotes(args: list[str]) -> None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+    names = ga.list_remote_names()
+    for name in names:
+        print(name)
+
+
 def cmd_branches(args: list[str]) -> None:
     if not ga.is_git_repo():
         print("Not a git repository.")
         return
+    
+    local_branches = ga.list_local_branches()
+    print("Local branches:")
+    for local_branch in local_branches:
+        print(local_branch)
 
-    for name in ga.list_branches():
-        print(name)
+    remote_branches = ga.list_remote_branches()
+    print("\nRemote branches:")
+    for remote_branch in remote_branches:
+        print(remote_branch)
 
 
 def cmd_commits(args: list[str]) -> None:
@@ -101,7 +84,7 @@ def cmd_checkout(args: list[str]) -> None:
         return
 
     if len(args) == 0:
-        target = pick_branch()
+        target = ui.pick_labeled_branch("checkout")
         if target is None:
             return
     elif len(args) == 1 and args[0].strip():
@@ -123,7 +106,7 @@ def cmd_reset(args: list[str]) -> None:
         return
 
     if len(args) == 0:
-        target = pick_commit()
+        target = ui.pick_commit()
         if target is None:
             return
     elif len(args) == 1 and args[0].strip():
@@ -156,8 +139,66 @@ def cmd_fetch(args: list[str]) -> None:
         print("Not a git repository.")
         return
     
-    code, err = ga.fetch()
+    code, out, err = ga.fetch()
     if code != 0:
         print(err)
+    elif out.strip():
+        print(out)
+
+
+def cmd_push(args: list[str]) -> None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+
+    if len(args) == 0:
+        remote = ui.pick_remote_name("push")
+        if remote is None:
+            return
+
+        branch = ui.pick_unlabeled_branch("push", remote)
+        if branch is None:
+            return
+
+    elif len(args) == 2 and args[0].strip() and args[1].strip():
+        remote = args[0].strip()
+        branch = args[1].strip()
+
     else:
-        print("Complete.")
+        print("usage: push <remote> <branch>")
+        return
+
+    code, out, err = ga.push(remote, branch)
+    if code != 0:
+        print(err)
+    elif out.strip():
+        print(out)
+
+
+def cmd_pull(args: list[str]) -> None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+
+    if len(args) == 0:
+        remote = ui.pick_remote_name("pull")
+        if remote is None:
+            return
+
+        branch = ui.pick_unlabeled_branch("pull", remote)
+        if branch is None:
+            return
+
+    elif len(args) == 2 and args[0].strip() and args[1].strip():
+        remote = args[0].strip()
+        branch = args[1].strip()
+
+    else:
+        print("usage: pull <remote> <branch>")
+        return
+
+    code, out, err = ga.pull(remote, branch)
+    if code != 0:
+        print(err)
+    elif out.strip():
+        print(out)

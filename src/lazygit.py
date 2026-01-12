@@ -1,6 +1,7 @@
 import command as cmd
 import git_adapter as ga
 import setting as st
+import utils as ut
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
@@ -14,53 +15,65 @@ _COMMAND_META = {
     "help": "Show help",
     "quit": "Exit LazyGit",
     "clear": "Clear the screen",
-    "branches": "List local branches",
+    "remotes": "List remote names",
+    "branches": "List all branches",
     "commits": "List commits (commits [N])",
     "checkout": "git checkout [branch] (picker if no arg)",
     "reset": "git reset [sha] (picker if no arg)",
     "status": "git status -sb",
-    "fetch": "git fetch --all --prune"
+    "fetch": "git fetch --all --prune",
+    "push": "git push <remote> <branch> (picker if no arg)",
+    "pull": "git pull <remote> <branch> (picker if no arg)",
 }
 
 
-def _truncate(s: str, n: int) -> str:
-    if n <= 0:
-        return ""
-    if s is None:
-        return ""
-    s = str(s)
-    return s if len(s) <= n else s[: max(0, n - 1)] + "…"
-
-
-def _fuzzy_in_order(needle: str, haystack: str) -> bool:
-    needle = (needle or "").lower()
-    haystack = (haystack or "").lower()
-    if needle == "":
-        return True
-
-    it = iter(haystack)
-    for ch in needle:
-        for h in it:
-            if h == ch:
-                break
-        else:
-            return False
-    return True
-
-
 class Cache:
-    def __init__(self, branches_cache=None, commits_cache=None, branches_at=0.0, commits_at=0.0):
-        self.branches_cache = branches_cache if branches_cache is not None else []
+    def __init__(
+            self,
+            remote_names_cache=None, remote_names_at=0.0,
+            unlabeled_branches_cache=None, unlabeled_branches_at=0.0,
+            labeled_branches_cache=None, labeled_branches_at=0.0,
+            commits_cache=None, commits_at=0.0,
+            local_branches_cache=None, local_branches_at=0.0,
+            remote_branches_cache=None, remote_branches_at=0.0,
+            ):
+        self.remote_names_cache = remote_names_cache if remote_names_cache is not None else []
+        self.unlabeled_branches_cache = unlabeled_branches_cache if unlabeled_branches_cache is not None else {}
+        self.labeled_branches_cache = labeled_branches_cache if labeled_branches_cache is not None else []
         self.commits_cache = commits_cache if commits_cache is not None else []
-        self.branches_cache_at = float(branches_at)
-        self.commits_cache_at = float(commits_at)
+        self.local_branches_cache = local_branches_cache if local_branches_cache is not None else []
+        self.remote_branches_cache = remote_branches_cache if remote_branches_cache is not None else []
 
-    def get_cached_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
-        past_time = time.time() - self.branches_cache_at
-        if self.branches_cache_at == 0.0 or past_time > ttl_sec:
-            self.branches_cache = ga.list_branches()
-            self.branches_cache_at = time.time()
-        return self.branches_cache
+        self.remote_names_at = float(remote_names_at)
+        self.unlabeled_branches_cache_at = float(unlabeled_branches_at)
+        self.labeled_branches_cache_at = float(labeled_branches_at)
+        self.commits_cache_at = float(commits_at)
+        self.local_branches_cache_at = float(local_branches_at)
+        self.remote_branches_cache_at = float(remote_branches_at)
+
+    def get_cached_remote_names(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+        past_time = time.time() - self.remote_names_at
+        if self.remote_names_at == 0.0 or past_time > ttl_sec:
+            remote_names = ga.list_remote_names()
+            self.remote_names_cache = remote_names
+            self.remote_names_at = time.time()
+        return self.remote_names_cache
+
+    def get_cached_unlabeled_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> dict[str, list[str]]:
+        past_time = time.time() - self.unlabeled_branches_cache_at
+        if self.unlabeled_branches_cache_at == 0.0 or past_time > ttl_sec:
+            branches = ut.remove_label(ga.list_remote_names(), ga.list_remote_branches(), ga.list_local_branches())
+            self.unlabeled_branches_cache = branches
+            self.unlabeled_branches_cache_at = time.time()
+        return self.unlabeled_branches_cache
+
+    def get_cached_labeled_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+        past_time = time.time() - self.labeled_branches_cache_at
+        if self.labeled_branches_cache_at == 0.0 or past_time > ttl_sec:
+            branches = ga.list_branches()
+            self.labeled_branches_cache = branches
+            self.labeled_branches_cache_at = time.time()
+        return self.labeled_branches_cache
 
     def get_cached_commits(self, limit=st.COMMITS_LIMIT, ttl_sec=st.CACHE_TTL_SEC) -> list[tuple[str, str]]:
         past_time = time.time() - self.commits_cache_at
@@ -68,6 +81,20 @@ class Cache:
             self.commits_cache = ga.list_commits(limit)
             self.commits_cache_at = time.time()
         return self.commits_cache
+
+    def get_cached_local_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+        past_time = time.time() - self.local_branches_cache_at
+        if self.local_branches_cache_at == 0.0 or past_time > ttl_sec:
+            self.local_branches_cache = ga.list_local_branches()
+            self.local_branches_cache_at = time.time()
+        return self.local_branches_cache
+
+    def get_cached_remote_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+        past_time = time.time() - self.remote_branches_cache_at
+        if self.remote_branches_cache_at == 0.0 or past_time > ttl_sec:
+            self.remote_branches_cache = ga.list_remote_branches()
+            self.remote_branches_cache_at = time.time()
+        return self.remote_branches_cache
 
 
 class LazyGitCompleter(Completer):
@@ -98,18 +125,31 @@ class LazyGitCompleter(Completer):
         if first == "checkout":
             if not ga.is_git_repo():
                 return
-            branches = self.cache.get_cached_branches()
+
             query = document.get_word_before_cursor(WORD=True)
+            locals_ = self.cache.get_cached_local_branches()
+            remotes = self.cache.get_cached_remote_branches()
+
+            items: list[tuple[str, str, str]] = []
+            for b in locals_:
+                items.append((b, b, "local"))
+
+            for full in remotes:
+                if "/" not in full:
+                    continue
+                remote, name = full.split("/", 1)
+                items.append((full, name, remote))
 
             if query == "":
-                for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
-                    yield Completion(text=b, start_position=0, display=b, display_meta="branch")
+                for text_, disp, meta in items[: st.BRANCHES_EMPTY_LIMIT]:
+                    yield Completion(text=text_, start_position=0, display=disp, display_meta=meta)
                 return
 
             q = query.lower()
-            for b in branches:
-                if _fuzzy_in_order(q, b):
-                    yield Completion(text=b, start_position=-len(query), display=b, display_meta="branch")
+            for text_, disp, meta in items:
+                hay = f"{disp} {text_} {meta}"
+                if ut._fuzzy_in_order(q, hay):
+                    yield Completion(text=text_, start_position=-len(query), display=disp, display_meta=meta)
             return
 
         # reset
@@ -126,21 +166,81 @@ class LazyGitCompleter(Completer):
                         text=sha,
                         start_position=0,
                         display=sha,
-                        display_meta=_truncate(subject, st.COMMIT_SUBJECT_MAX),
+                        display_meta=ut._truncate(subject, st.COMMIT_SUBJECT_MAX),
                     )
                 return
 
             q = query.lower()
             for sha, subject in commits:
                 hay = f"{sha} {subject}"
-                if _fuzzy_in_order(q, hay):
+                if ut._fuzzy_in_order(q, hay):
                     yield Completion(
                         text=sha,
                         start_position=-len(query),
                         display=sha,
-                        display_meta=_truncate(subject, st.COMMIT_SUBJECT_MAX),
+                        display_meta=ut._truncate(subject, st.COMMIT_SUBJECT_MAX),
                     )
             return
+
+        # push / pull
+        if first in ("push", "pull"):
+            if not ga.is_git_repo():
+                return
+
+            if len(parts) > 3:
+                return
+
+            # Case 1: "push " / "pull " -> 補 remote names
+            if len(parts) == 1 and stripped.endswith(" "):
+                names = self.cache.get_cached_remote_names()
+                for n in names[: st.REMOTE_NAMES_EMPTY_LIMIT]:
+                    yield Completion(text=n, start_position=0, display=n, display_meta="remote")
+                return
+
+            # Case 2: "push ori" -> 正在打 remote
+            if len(parts) == 2 and not stripped.endswith(" "):
+                query = document.get_word_before_cursor(WORD=True)
+                names = self.cache.get_cached_remote_names()
+
+                if query == "":
+                    for n in names[: st.REMOTE_NAMES_EMPTY_LIMIT]:
+                        yield Completion(text=n, start_position=0, display=n, display_meta="remote")
+                    return
+
+                q = query.lower()
+                for n in names:
+                    if ut._fuzzy_in_order(q, n):
+                        yield Completion(text=n, start_position=-len(query), display=n, display_meta="remote")
+                return
+
+            # Case 3: "push origin " -> remote 確定
+            if len(parts) == 2 and stripped.endswith(" "):
+                remote = parts[1]
+                by_remote = self.cache.get_cached_unlabeled_branches()
+                branches = by_remote.get(remote, [])
+
+                for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
+                    yield Completion(text=b, start_position=0, display=b, display_meta=remote)
+                return
+
+            # Case 4: "push origin ma"
+            if len(parts) == 3:
+                remote = parts[1]
+                query = document.get_word_before_cursor(WORD=True)
+
+                by_remote = self.cache.get_cached_unlabeled_branches()
+                branches = by_remote.get(remote, [])
+
+                if query == "":
+                    for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
+                        yield Completion(text=b, start_position=0, display=b, display_meta=remote)
+                    return
+
+                q = query.lower()
+                for b in branches:
+                    if ut._fuzzy_in_order(q, b):
+                        yield Completion(text=b, start_position=-len(query), display=b, display_meta=remote)
+                return
 
 
 def dispatch(tokens: list[str]) -> bool:
@@ -154,6 +254,7 @@ def dispatch(tokens: list[str]) -> bool:
 
     table = {
         "help": cmd.cmd_help,
+        "remotes": cmd.cmd_remotes,
         "branches": cmd.cmd_branches,
         "commits": cmd.cmd_commits,
         "checkout": cmd.cmd_checkout,
@@ -161,6 +262,8 @@ def dispatch(tokens: list[str]) -> bool:
         "clear": cmd.cmd_clear,
         "status": cmd.cmd_status,
         "fetch": cmd.cmd_fetch,
+        "push": cmd.cmd_push,
+        "pull": cmd.cmd_pull,
     }
 
     handler = table.get(name)

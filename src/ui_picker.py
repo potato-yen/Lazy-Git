@@ -1,35 +1,12 @@
+import git_adapter as ga
 import setting as st
+import utils as ut
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import CompleteStyle
-
-
-def _truncate(s: str, n: int) -> str:
-    if n <= 0:
-        return ""
-    if s is None:
-        return ""
-    s = str(s)
-    return s if len(s) <= n else s[: max(0, n - 1)] + "…"
-
-
-def _fuzzy_in_order(needle: str, haystack: str) -> bool:
-    needle = (needle or "").lower()
-    haystack = (haystack or "").lower()
-    if needle == "":
-        return True
-
-    it = iter(haystack)
-    for ch in needle:
-        for h in it:
-            if h == ch:
-                break
-        else:
-            return False
-    return True
 
 
 class SimpleCompleter(Completer):
@@ -48,7 +25,7 @@ class SimpleCompleter(Completer):
                 return
             subset = self.choices[: self.empty_limit]
             for value, label, meta in subset:
-                meta_out = _truncate(meta, self.meta_max) if self.meta_max > 0 else meta
+                meta_out = ut._truncate(meta, self.meta_max) if self.meta_max > 0 else meta
                 yield Completion(
                     text=value,
                     start_position=0,
@@ -64,9 +41,9 @@ class SimpleCompleter(Completer):
         for value, label, meta in self.choices:
             hay = (str(value) + " " + str(label) + " " + str(meta)).lower()
 
-            ok = _fuzzy_in_order(q, hay) if self.fuzzy else (q in hay)
+            ok = ut._fuzzy_in_order(q, hay) if self.fuzzy else (q in hay)
             if ok:
-                meta_out = _truncate(meta, self.meta_max) if self.meta_max > 0 else meta
+                meta_out = ut._truncate(meta, self.meta_max) if self.meta_max > 0 else meta
                 yield Completion(
                     text=value,
                     start_position=-len(document.text),
@@ -106,3 +83,60 @@ def pick_value(choices, title, min_chars=0, empty_limit=50, fuzzy=False, meta_ma
     if canceled["v"]:
         return None
     return v if v else None
+
+
+def pick_remote_name(mode: str) -> str | None:
+    remote_names = ga.list_remote_names()
+    choices = [(n, n, "") for n in remote_names]
+    return pick_value(
+        choices,
+        mode,
+        min_chars=0,
+        empty_limit=st.REMOTE_NAMES_EMPTY_LIMIT,
+        fuzzy=True,
+        meta_max=0,
+    )
+
+
+def pick_unlabeled_branch(mode: str, remote_name: str) -> str | None:
+    categorized = ut.remove_label(ga.list_remote_names(), ga.list_remote_branches(), ga.list_local_branches())
+    branches = categorized.get(remote_name)
+    if branches is None:
+        return 
+    
+    choices = [(b, b, "") for b in branches]
+    return pick_value(
+        choices,
+        mode,
+        min_chars=0,
+        empty_limit=st.BRANCHES_EMPTY_LIMIT,
+        fuzzy=True,
+        meta_max=0,
+    )
+
+
+def pick_labeled_branch(mode: str) -> str | None:
+    branches = ga.list_branches()
+    choices = [(b, b, "") for b in branches]
+    return pick_value(
+        choices,
+        mode,
+        min_chars=0,
+        empty_limit=st.BRANCHES_EMPTY_LIMIT,
+        fuzzy=True,
+        meta_max=0,
+    )
+
+
+def pick_commit(limit: int = st.COMMITS_LIMIT) -> str | None:
+    commits = ga.list_commits(limit)
+    choices = [(sha, sha, ut._truncate(subject, st.COMMIT_SUBJECT_MAX)) for sha, subject in commits]
+
+    return pick_value(
+        choices,
+        "reset",
+        min_chars=0,
+        empty_limit=st.COMMITS_EMPTY_LIMIT_PICKER,
+        fuzzy=True,
+        meta_max=st.COMMIT_SUBJECT_MAX,
+    )
