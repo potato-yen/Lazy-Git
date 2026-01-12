@@ -27,6 +27,31 @@ _COMMAND_META = {
 }
 
 
+def _yield_items(
+    *,
+    items: list[tuple[str, str, str]],  # (text, display, meta)
+    query: str,
+    empty_limit: int,
+    fuzzy_fn,
+):
+    if query == "":
+        for text, disp, meta in items[:empty_limit]:
+            yield Completion(text=text, start_position=0, display=disp, display_meta=meta)
+        return
+
+    q = query.lower()
+    for text, disp, meta in items:
+        hay = f"{disp} {text} {meta}"
+        if fuzzy_fn(q, hay):
+            yield Completion(text=text, start_position=-len(query), display=disp, display_meta=meta)
+
+
+def _arg_index(parts: list[str], stripped: str) -> int:
+    if len(parts) <= 1:
+        return 0
+    return (len(parts) - 1) if stripped.endswith(" ") else (len(parts) - 2)
+
+
 class Cache:
     def __init__(
             self,
@@ -54,8 +79,7 @@ class Cache:
     def get_cached_remote_names(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.remote_names_at
         if self.remote_names_at == 0.0 or past_time > ttl_sec:
-            remote_names = ga.list_remote_names()
-            self.remote_names_cache = remote_names
+            self.remote_names_cache = ga.list_remote_names()
             self.remote_names_at = time.time()
         return self.remote_names_cache
 
@@ -70,8 +94,7 @@ class Cache:
     def get_cached_labeled_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.labeled_branches_cache_at
         if self.labeled_branches_cache_at == 0.0 or past_time > ttl_sec:
-            branches = ga.list_branches()
-            self.labeled_branches_cache = branches
+            self.labeled_branches_cache = ga.list_branches()
             self.labeled_branches_cache_at = time.time()
         return self.labeled_branches_cache
 
@@ -113,7 +136,7 @@ class LazyGitCompleter(Completer):
         parts = stripped.split()
         first = parts[0]
 
-        # 補全指令
+        # command completion
         if len(parts) == 1 and not stripped.endswith(" "):
             word = parts[0]
             for name, meta in _COMMAND_META.items():
@@ -121,7 +144,7 @@ class LazyGitCompleter(Completer):
                     yield Completion(text=name, start_position=-len(word), display=name, display_meta=meta)
             return
 
-        # checkout branch
+        # checkout:
         if first == "checkout":
             if not ga.is_git_repo():
                 return
@@ -130,26 +153,19 @@ class LazyGitCompleter(Completer):
             locals_ = self.cache.get_cached_local_branches()
             remotes = self.cache.get_cached_remote_branches()
 
-            items: list[tuple[str, str, str]] = []
-            for b in locals_:
-                items.append((b, b, "local"))
-
+            items: list[tuple[str, str, str]] = [(b, b, "local") for b in locals_]
             for full in remotes:
                 if "/" not in full:
                     continue
                 remote, name = full.split("/", 1)
                 items.append((full, name, remote))
 
-            if query == "":
-                for text_, disp, meta in items[: st.BRANCHES_EMPTY_LIMIT]:
-                    yield Completion(text=text_, start_position=0, display=disp, display_meta=meta)
-                return
-
-            q = query.lower()
-            for text_, disp, meta in items:
-                hay = f"{disp} {text_} {meta}"
-                if ut._fuzzy_in_order(q, hay):
-                    yield Completion(text=text_, start_position=-len(query), display=disp, display_meta=meta)
+            yield from _yield_items(
+                items=items,
+                query=query,
+                empty_limit=st.BRANCHES_EMPTY_LIMIT,
+                fuzzy_fn=ut._fuzzy_in_order,
+            )
             return
 
         # reset
@@ -160,26 +176,17 @@ class LazyGitCompleter(Completer):
             query = document.get_word_before_cursor(WORD=True)
             commits = self.cache.get_cached_commits(st.COMMITS_LIMIT)
 
-            if query == "":
-                for sha, subject in commits[: st.COMMITS_EMPTY_LIMIT_REPL]:
-                    yield Completion(
-                        text=sha,
-                        start_position=0,
-                        display=sha,
-                        display_meta=ut._truncate(subject, st.COMMIT_SUBJECT_MAX),
-                    )
-                return
+            items: list[tuple[str, str, str]] = [
+                (sha, sha, ut._truncate(subject, st.COMMIT_SUBJECT_MAX))
+                for sha, subject in commits
+            ]
 
-            q = query.lower()
-            for sha, subject in commits:
-                hay = f"{sha} {subject}"
-                if ut._fuzzy_in_order(q, hay):
-                    yield Completion(
-                        text=sha,
-                        start_position=-len(query),
-                        display=sha,
-                        display_meta=ut._truncate(subject, st.COMMIT_SUBJECT_MAX),
-                    )
+            yield from _yield_items(
+                items=items,
+                query=query,
+                empty_limit=st.COMMITS_EMPTY_LIMIT_REPL,
+                fuzzy_fn=ut._fuzzy_in_order,
+            )
             return
 
         # push / pull
@@ -190,56 +197,33 @@ class LazyGitCompleter(Completer):
             if len(parts) > 3:
                 return
 
-            # Case 1: "push " / "pull " -> 補 remote names
-            if len(parts) == 1 and stripped.endswith(" "):
+            arg_i = _arg_index(parts, stripped)
+            query = document.get_word_before_cursor(WORD=True)
+
+            # arg0: remote
+            if arg_i == 0:
                 names = self.cache.get_cached_remote_names()
-                for n in names[: st.REMOTE_NAMES_EMPTY_LIMIT]:
-                    yield Completion(text=n, start_position=0, display=n, display_meta="remote")
+                items = [(n, n, "remote") for n in names]
+                yield from _yield_items(
+                    items=items,
+                    query=query,
+                    empty_limit=st.REMOTE_NAMES_EMPTY_LIMIT,
+                    fuzzy_fn=ut._fuzzy_in_order,
+                )
                 return
 
-            # Case 2: "push ori" -> 正在打 remote
-            if len(parts) == 2 and not stripped.endswith(" "):
-                query = document.get_word_before_cursor(WORD=True)
-                names = self.cache.get_cached_remote_names()
-
-                if query == "":
-                    for n in names[: st.REMOTE_NAMES_EMPTY_LIMIT]:
-                        yield Completion(text=n, start_position=0, display=n, display_meta="remote")
-                    return
-
-                q = query.lower()
-                for n in names:
-                    if ut._fuzzy_in_order(q, n):
-                        yield Completion(text=n, start_position=-len(query), display=n, display_meta="remote")
-                return
-
-            # Case 3: "push origin " -> remote 確定
-            if len(parts) == 2 and stripped.endswith(" "):
-                remote = parts[1]
+            # arg1: branch (depends on remote)
+            if arg_i == 1:
+                remote = parts[1] if len(parts) >= 2 else ""
                 by_remote = self.cache.get_cached_unlabeled_branches()
                 branches = by_remote.get(remote, [])
-
-                for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
-                    yield Completion(text=b, start_position=0, display=b, display_meta=remote)
-                return
-
-            # Case 4: "push origin ma"
-            if len(parts) == 3:
-                remote = parts[1]
-                query = document.get_word_before_cursor(WORD=True)
-
-                by_remote = self.cache.get_cached_unlabeled_branches()
-                branches = by_remote.get(remote, [])
-
-                if query == "":
-                    for b in branches[: st.BRANCHES_EMPTY_LIMIT]:
-                        yield Completion(text=b, start_position=0, display=b, display_meta=remote)
-                    return
-
-                q = query.lower()
-                for b in branches:
-                    if ut._fuzzy_in_order(q, b):
-                        yield Completion(text=b, start_position=-len(query), display=b, display_meta=remote)
+                items = [(b, b, remote) for b in branches]
+                yield from _yield_items(
+                    items=items,
+                    query=query,
+                    empty_limit=st.BRANCHES_EMPTY_LIMIT,
+                    fuzzy_fn=ut._fuzzy_in_order,
+                )
                 return
 
 
