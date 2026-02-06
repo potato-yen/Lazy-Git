@@ -137,3 +137,10 @@ def pull(remote_name: str, branch: str) -> tuple[int, str, str]:
         return (1, "", "Not a git repository.")
     output = command_run(["git", "pull", remote_name, branch])
     return output.returncode, output.stdout, output.stderr
+
+
+def new_branch(branch: str) -> tuple[int, str, str]:
+    if not is_git_repo():
+        return (1, "", "Not a git repository.")
+    output = command_run(["git", "branch", branch])
+    return output.returncode, output.stdout, output.stderr

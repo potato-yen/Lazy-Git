@@ -12,6 +12,7 @@ def cmd_help(args: list[str] | None = None) -> None:
         "  remotes                      List remote names\n"
         "  branches                     List local branches\n"
         "  commits [N]                  List latest N commits (default: 10)\n"
+        "  new <branch>                 git branch <branch>\n"
         "  fetch                        git fetch --all --prune\n"
         "  status                       git status -sb\n"
         "  checkout [branch]            git checkout <branch> (no arg opens picker)\n"
@@ -76,6 +77,24 @@ def cmd_commits(args: list[str]) -> None:
 
     for sha, subject in ga.list_commits(n):
         print(f"{sha} {subject}")
+
+
+def cmd_new(args: list[str]) -> None:
+    if not ga.is_git_repo():
+        print("Not a git repository.")
+        return
+
+    if len(args) == 1 and args[0].strip():
+        branch = args[0].strip()
+    else:
+        print("usage: new <branch>")
+        return
+
+    code, out, err = ga.new_branch(branch)
+    if code != 0:
+        print(err)
+    elif out.strip():
+        print(out)
 
 
 def cmd_checkout(args: list[str]) -> None:
