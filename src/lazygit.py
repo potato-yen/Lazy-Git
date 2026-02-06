@@ -1,10 +1,12 @@
+from typing import Callable, Iterable
+
 import command as cmd
 import git_adapter as ga
 import setting as st
 import utils as ut
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.shortcuts import CompleteStyle
 
@@ -32,8 +34,8 @@ def _yield_items(
     items: list[tuple[str, str, str]],  # (text, display, meta)
     query: str,
     empty_limit: int,
-    fuzzy_fn,
-):
+    fuzzy_fn: Callable[[str, str], bool],
+) -> Iterable[Completion]:
     if query == "":
         for text, disp, meta in items[:empty_limit]:
             yield Completion(text=text, start_position=0, display=disp, display_meta=meta)
@@ -54,14 +56,20 @@ def _arg_index(parts: list[str], stripped: str) -> int:
 
 class Cache:
     def __init__(
-            self,
-            remote_names_cache=None, remote_names_at=0.0,
-            unlabeled_branches_cache=None, unlabeled_branches_at=0.0,
-            labeled_branches_cache=None, labeled_branches_at=0.0,
-            commits_cache=None, commits_at=0.0,
-            local_branches_cache=None, local_branches_at=0.0,
-            remote_branches_cache=None, remote_branches_at=0.0,
-            ):
+        self,
+        remote_names_cache: list[str] | None = None,
+        remote_names_at: float = 0.0,
+        unlabeled_branches_cache: dict[str, list[str]] | None = None,
+        unlabeled_branches_at: float = 0.0,
+        labeled_branches_cache: list[str] | None = None,
+        labeled_branches_at: float = 0.0,
+        commits_cache: list[tuple[str, str]] | None = None,
+        commits_at: float = 0.0,
+        local_branches_cache: list[str] | None = None,
+        local_branches_at: float = 0.0,
+        remote_branches_cache: list[str] | None = None,
+        remote_branches_at: float = 0.0,
+    ) -> None:
         self.remote_names_cache = remote_names_cache if remote_names_cache is not None else []
         self.unlabeled_branches_cache = unlabeled_branches_cache if unlabeled_branches_cache is not None else {}
         self.labeled_branches_cache = labeled_branches_cache if labeled_branches_cache is not None else []
@@ -76,14 +84,14 @@ class Cache:
         self.local_branches_cache_at = float(local_branches_at)
         self.remote_branches_cache_at = float(remote_branches_at)
 
-    def get_cached_remote_names(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+    def get_cached_remote_names(self, ttl_sec: float = st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.remote_names_at
         if self.remote_names_at == 0.0 or past_time > ttl_sec:
             self.remote_names_cache = ga.list_remote_names()
             self.remote_names_at = time.time()
         return self.remote_names_cache
 
-    def get_cached_unlabeled_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> dict[str, list[str]]:
+    def get_cached_unlabeled_branches(self, ttl_sec: float = st.CACHE_TTL_SEC) -> dict[str, list[str]]:
         past_time = time.time() - self.unlabeled_branches_cache_at
         if self.unlabeled_branches_cache_at == 0.0 or past_time > ttl_sec:
             branches = ut.remove_label(ga.list_remote_names(), ga.list_remote_branches(), ga.list_local_branches())
@@ -91,28 +99,32 @@ class Cache:
             self.unlabeled_branches_cache_at = time.time()
         return self.unlabeled_branches_cache
 
-    def get_cached_labeled_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+    def get_cached_labeled_branches(self, ttl_sec: float = st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.labeled_branches_cache_at
         if self.labeled_branches_cache_at == 0.0 or past_time > ttl_sec:
             self.labeled_branches_cache = ga.list_branches()
             self.labeled_branches_cache_at = time.time()
         return self.labeled_branches_cache
 
-    def get_cached_commits(self, limit=st.COMMITS_LIMIT, ttl_sec=st.CACHE_TTL_SEC) -> list[tuple[str, str]]:
+    def get_cached_commits(
+        self,
+        limit: int = st.COMMITS_LIMIT,
+        ttl_sec: float = st.CACHE_TTL_SEC,
+    ) -> list[tuple[str, str]]:
         past_time = time.time() - self.commits_cache_at
         if self.commits_cache_at == 0.0 or past_time > ttl_sec:
             self.commits_cache = ga.list_commits(limit)
             self.commits_cache_at = time.time()
         return self.commits_cache
 
-    def get_cached_local_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+    def get_cached_local_branches(self, ttl_sec: float = st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.local_branches_cache_at
         if self.local_branches_cache_at == 0.0 or past_time > ttl_sec:
             self.local_branches_cache = ga.list_local_branches()
             self.local_branches_cache_at = time.time()
         return self.local_branches_cache
 
-    def get_cached_remote_branches(self, ttl_sec=st.CACHE_TTL_SEC) -> list[str]:
+    def get_cached_remote_branches(self, ttl_sec: float = st.CACHE_TTL_SEC) -> list[str]:
         past_time = time.time() - self.remote_branches_cache_at
         if self.remote_branches_cache_at == 0.0 or past_time > ttl_sec:
             self.remote_branches_cache = ga.list_remote_branches()
@@ -121,10 +133,10 @@ class Cache:
 
 
 class LazyGitCompleter(Completer):
-    def __init__(self, cache):
+    def __init__(self, cache: Cache) -> None:
         self.cache = cache
 
-    def get_completions(self, document: Document, complete_event):
+    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
         text = document.text_before_cursor
         stripped = text.lstrip()
 

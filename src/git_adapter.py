@@ -1,16 +1,16 @@
 import subprocess
 
 
-def command_run(cmd):
+def command_run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=True)
 
 
-def is_git_repo():
+def is_git_repo() -> bool:
     output = command_run(["git", "rev-parse", "--is-inside-work-tree"])
     return output.returncode == 0 and output.stdout.strip() == "true"
 
 
-def list_remote_names():
+def list_remote_names() -> list[str]:
     if not is_git_repo():
         return []
     
@@ -26,7 +26,7 @@ def list_remote_names():
     return remote_names
 
 
-def list_local_branches():
+def list_local_branches() -> list[str]:
     if not is_git_repo():
         return []
     
@@ -43,7 +43,7 @@ def list_local_branches():
     return branches
 
 
-def list_remote_branches():
+def list_remote_branches() -> list[str]:
     if not is_git_repo():
         return []
     
@@ -69,7 +69,7 @@ def list_remote_branches():
     return branches
 
 
-def list_branches():
+def list_branches() -> list[str]:
     if not is_git_repo():
         return []
 
@@ -77,7 +77,7 @@ def list_branches():
     return branches
 
 
-def list_commits(limit):
+def list_commits(limit: int) -> list[tuple[str, str]]:
     if limit <= 0:
         return []
     if not is_git_repo():
@@ -97,44 +97,43 @@ def list_commits(limit):
     return commits
 
 
-def checkout(branch : str):
+def checkout(branch: str) -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "checkout", branch])
     return (output.returncode, output.stdout, output.stderr)
 
 
-def reset(sha : str):
+def reset(sha: str) -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "reset", sha])
     return output.returncode, output.stdout, output.stderr
 
 
-def status():
+def status() -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "status", "-sb"])
     return output.returncode, output.stdout, output.stderr
 
 
-def fetch():
+def fetch() -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "fetch", "--all", "--prune"])
     return output.returncode, output.stdout, output.stderr
 
 
-def push(remote_name: str, branch: str):
+def push(remote_name: str, branch: str) -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "push", remote_name, branch])
     return output.returncode, output.stdout, output.stderr
 
 
-def pull(remote_name: str, branch: str):
+def pull(remote_name: str, branch: str) -> tuple[int, str, str]:
     if not is_git_repo():
         return (1, "", "Not a git repository.")
     output = command_run(["git", "pull", remote_name, branch])
     return output.returncode, output.stdout, output.stderr
-

@@ -3,7 +3,7 @@ import ui_picker as ui
 import setting as st
 
 
-def cmd_help(args=None) -> None:
+def cmd_help(args: list[str] | None = None) -> None:
     print(
         "LazyGit (REPL) commands:\n"
         "  help                         Show this help\n"
@@ -122,7 +122,7 @@ def cmd_reset(args: list[str]) -> None:
         print(out)
 
 
-def cmd_status(args: list[str]) ->None:
+def cmd_status(args: list[str]) -> None:
     if not ga.is_git_repo():
         print("Not a git repository.")
         return
