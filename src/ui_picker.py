@@ -1,23 +1,32 @@
+from typing import Iterable
+
 import git_adapter as ga
 import setting as st
 import utils as ut
 
 from prompt_toolkit import PromptSession
-from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.shortcuts import CompleteStyle
 
 
 class SimpleCompleter(Completer):
-    def __init__(self, choices, min_chars=0, empty_limit=st.BRANCHES_EMPTY_LIMIT, fuzzy=False, meta_max=0):
+    def __init__(
+        self,
+        choices: list[tuple[str, str, str]],
+        min_chars: int = 0,
+        empty_limit: int = st.BRANCHES_EMPTY_LIMIT,
+        fuzzy: bool = False,
+        meta_max: int = 0,
+    ) -> None:
         self.choices = list(choices)
         self.min_chars = int(min_chars)
         self.empty_limit = int(empty_limit)
         self.fuzzy = bool(fuzzy)
         self.meta_max = int(meta_max)
 
-    def get_completions(self, document: Document, complete_event):
+    def get_completions(self, document: Document, complete_event: CompleteEvent) -> Iterable[Completion]:
         text = document.text.strip()
 
         if text == "":
@@ -52,7 +61,14 @@ class SimpleCompleter(Completer):
                 )
 
 
-def pick_value(choices, title, min_chars=0, empty_limit=50, fuzzy=False, meta_max=0):
+def pick_value(
+    choices: list[tuple[str, str, str]],
+    title: str,
+    min_chars: int = 0,
+    empty_limit: int = 50,
+    fuzzy: bool = False,
+    meta_max: int = 0,
+) -> str | None:
     if not choices:
         return None
 
